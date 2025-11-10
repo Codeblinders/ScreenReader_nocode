@@ -1,0 +1,128 @@
+{
+  "name": "Screen Q&A to Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "start-my-automation",
+        "options": {
+          "responseMode": "onReceived"
+        }
+      },
+      "id": "1",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "command": "python3",
+        "arguments": [
+          "-c",
+          "import mss, pytesseract, json; from PIL import Image; sct = mss.mss(); monitor = sct.monitors[1]; screenshot = sct.grab(monitor); img = Image.frombytes('RGB', screenshot.size, screenshot.rgb); text = pytesseract.image_to_string(img); print(json.dumps({'question': text.strip()}))"
+        ]
+      },
+      "id": "2",
+      "name": "Read Screen (OCR)",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "method": "POST",
+        "authentication": "headerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4\",\n  \"messages\": [\n    {\"role\": \"user\", \"content\": {{ $json.question }}}\n  ]\n}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Ask ChatGPT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [750, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const answer = $input.item.json.choices[0].message.content;\nreturn {json: {answer}};"
+      },
+      "id": "4",
+      "name": "Extract Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot8541853829:AAHUNNlFIpiBi8i2UjH2W5NCfMLkNR5a9RY/sendMessage",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"1168051237\",\n  \"text\": {{ $json.answer }},\n  \"parse_mode\": \"Markdown\"\n}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Screen (OCR)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Screen (OCR)": {
+      "main": [
+        [
+          {
+            "node": "Ask ChatGPT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask ChatGPT": {
+      "main": [
+        [
+          {
+            "node": "Extract Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Answer": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

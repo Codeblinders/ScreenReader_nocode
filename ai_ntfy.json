@@ -1,0 +1,161 @@
+{
+  "name": "Gemini Image Analyzer with ntfy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "start-gemini-agent",
+        "responseMode": "onReceived"
+      },
+      "id": "Webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "command": "python - <<EOF\nimport mss, time\nsct = mss.mss()\nfilename = r'C:\\\\Users\\\\v8957\\\\AppData\\\\Local\\\\Temp\\\\grab.png'\nsct.shot(mon=1, output=filename)\nprint(filename)\nEOF"
+      },
+      "id": "CaptureScreen",
+      "name": "Capture Screen Region",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "command": "python - <<EOF\nimport base64, sys\npath = r'C:\\\\Users\\\\v8957\\\\AppData\\\\Local\\\\Temp\\\\grab.png'\nwith open(path, 'rb') as f:\n    print(base64.b64encode(f.read()).decode())\nEOF"
+      },
+      "id": "ConvertBase64",
+      "name": "Convert to Base64",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  binary: {\n    data: {\n      mimeType: 'image/png',\n      data: $json[\"stdout\"].trim()\n    }\n  }\n}];"
+      },
+      "id": "PrepareBinary",
+      "name": "Prepare Binary Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "return new Promise(resolve => setTimeout(() => resolve(items), 2000));"
+      },
+      "id": "WaitNode",
+      "name": "Wait (gentle spacing)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1150, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    body: JSON.stringify({\n      contents: [{\n        parts: [\n          {\n            text: \"Analyze the image and answer the question asked in it. If it's a coding problem, write Java code; if it's an MCQ, answer only the correct option(s).\"\n          },\n          {\n            inline_data: {\n              mime_type: $binary.data.mimeType || 'image/png',\n              data: $binary.data.data\n            }\n          }\n        ]\n      }]\n    })\n  }\n}];"
+      },
+      "id": "PrepareRequest",
+      "name": "Build Gemini Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1350, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "method": "POST",
+        "responseFormat": "json",
+        "jsonParameters": true,
+        "options": {},
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "contentType": "application/json",
+        "body": "={{$json[\"body\"]}}",
+        "headerParameters": {
+          "X-goog-api-key": "YOUR_GEMINI_API_KEY_HERE"
+        }
+      },
+      "id": "AskGemini",
+      "name": "Ask Gemini (image+text)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1600, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const txt = $json?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from Gemini';\nreturn [{ json: { answer: txt } }];"
+      },
+      "id": "ExtractAnswer",
+      "name": "Extract Gemini Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://ntfy.sh/my_gemini_agent",
+        "method": "POST",
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "contentType": "text/plain",
+        "body": "={{$json[\"answer\"]}}"
+      },
+      "id": "SendToNtfy",
+      "name": "Send to ntfy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Capture Screen Region", "type": "main", "index": 0 }]
+      ]
+    },
+    "Capture Screen Region": {
+      "main": [
+        [{ "node": "Convert to Base64", "type": "main", "index": 0 }]
+      ]
+    },
+    "Convert to Base64": {
+      "main": [
+        [{ "node": "Prepare Binary Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Binary Data": {
+      "main": [
+        [{ "node": "Wait (gentle spacing)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait (gentle spacing)": {
+      "main": [
+        [{ "node": "Build Gemini Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Gemini Request": {
+      "main": [
+        [{ "node": "Ask Gemini (image+text)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ask Gemini (image+text)": {
+      "main": [
+        [{ "node": "Extract Gemini Answer", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Gemini Answer": {
+      "main": [
+        [{ "node": "Send to ntfy", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "id": "GeminiAutomation"
+}
